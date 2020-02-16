@@ -47,6 +47,7 @@ import binascii
 import math
 import operator
 import os
+import os.path
 
 from modules.lz4enc import LZ4 
 from modules.huffman import Huffman
@@ -427,7 +428,7 @@ class VgmPacker:
 	# Process(filename)
 	# Convert the given VGM file to a compressd VGC file
 	#----------------------------------------------------------
-	def process(self, src_filename, dst_filename, buffersize = 255, use_huffman = True):
+	def process(self, src_filename, dst_filename, buffersize = 255, use_huffman = True, save_separate_streams = False):
 
 
 
@@ -546,6 +547,10 @@ class VgmPacker:
 			n = 0x00
 			if use_huffman: #self.ENABLE_HUFFMAN:
 				n |= 0x80
+
+			if save_separate_streams:
+				n |= 0x20
+                                
 			output[0] = 0x56
 			output[1] = 0x47
 			output[2] = 0x43
@@ -584,16 +589,35 @@ class VgmPacker:
 
 				streams[i] = lz4.compressBlock( huffdata )
 
-		# Step 4 - Serialise the blocks
-		for s in streams:
-			output += s
+		print 'agh %s'%save_separate_streams
 
-		# Step 5 - write the output file
-		lz4.endFrame(output)
-		self.report(lz4, data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
+		if save_separate_streams:
+			dst_name, dst_ext = os.path.splitext(dst_filename)
 
-		# write the lz4 compressed file.
-		open(dst_filename, "wb").write( output )
+			# save header file
+			with open(dst_filename, "wb") as f:
+				f.write(output)
+
+			# save streams
+			for index, stream in enumerate(streams):
+				stream_filename = "%s.%d%s"%(dst_name, index, dst_ext)
+				data = stream[:]
+				lz4.endFrame(data)
+				
+				with open(stream_filename, "wb") as f:
+					f.write(data)
+		else:
+
+			# Step 4 - Serialise the blocks
+			for s in streams:
+				output += s
+
+			# Step 5 - write the output file
+			lz4.endFrame(output)
+			self.report(lz4, data_block, output, 8, "Paired 8 register blocks [01][23][45][6][7][8][9][A] WITH register masks ")
+
+			# write the lz4 compressed file.
+			open(dst_filename, "wb").write( output )
 
 
 #------------------------------------------------------------------------
@@ -625,6 +649,7 @@ if __name__ == '__main__':
 	parser.add_argument("-b", "--buffer", type=int, default=255, metavar="<n>", help="Set decoder buffer size to <n> bytes, default: 255")
 	parser.add_argument("-n", "--huffman", help="Enable huffman compression", default=False, action="store_true")
 	parser.add_argument("-v", "--verbose", help="Enable verbose mode", action="store_true")
+	parser.add_argument("-s", "--streams", action="store_true", help="Output each stream as a separate file")
 	args = parser.parse_args()
 
 
@@ -640,7 +665,8 @@ if __name__ == '__main__':
 
 	packer = VgmPacker()
 	packer.VERBOSE = args.verbose
-	packer.process(src, dst, args.buffer, args.huffman)
+	packer.process(src, dst, args.buffer, args.huffman, args.streams)
 
-
-
+# Local Variables:
+# indent-tabs-mode: t
+# End:
